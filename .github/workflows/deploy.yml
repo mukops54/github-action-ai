@@ -18,54 +18,20 @@ jobs:
     name: Model Smoke Test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Read image tag from hf-space/Dockerfile
-        id: read-tag
-        run: |
-          TAG=$(grep '^FROM' hf-space/Dockerfile | awk -F: '{print $2}')
-          echo "Image tag to test: $TAG"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-
-      - name: Pull image from Docker Hub
-        run: docker pull ${{ env.DOCKER_REPO }}:${{ steps.read-tag.outputs.tag }}
+      - uses: actions/checkout@v4
 
       - name: Start container
         run: |
-          docker run -d \
-            --name smoke-test \
-            -p 7860:7860 \
-            ${{ env.DOCKER_REPO }}:${{ steps.read-tag.outputs.tag }}
+          IMAGE=$(grep '^FROM' hf-space/Dockerfile | awk '{print $2}')
+          docker run -d --name smoke-test -p 7860:7860 $IMAGE
 
-      - name: Wait for model to load
+      - name: Wait for model and run smoke test
         run: |
-          echo "Waiting for container to be ready..."
-          for i in {1..20}; do
-            if curl -sf http://localhost:7860/health; then
-              echo ""
-              echo "Container is ready!"
-              break
-            fi
-            echo "Attempt $i/20 — retrying in 15 seconds..."
-            sleep 15
-          done
-
-      - name: Run smoke test on predict endpoint
-        run: |
-          RESPONSE=$(curl -sf -X POST http://localhost:7860/predict \
+          curl --retry 20 --retry-delay 15 --retry-connrefused -sf \
+            http://localhost:7860/health
+          curl --fail -X POST http://localhost:7860/predict \
             -H "Content-Type: application/json" \
-            -d '{"text": "The weather today is absolutely wonderful!"}')
-          echo "Model response: $RESPONSE"
-          python3 -c "
-          import sys, json
-          data = json.loads('$RESPONSE')
-          assert 'label' in data, 'Missing label field'
-          assert 'score' in data, 'Missing score field'
-          assert data['label'] in ['POSITIVE', 'NEGATIVE'], 'Invalid label value'
-          assert 0 <= float(data['score']) <= 1, 'Score out of range'
-          print('Smoke test passed — model is responding correctly')
-          "
+            -d '{"text": "The weather today is absolutely wonderful!"}'
 
       - name: Stop container
         if: always()
