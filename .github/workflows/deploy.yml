@@ -55,7 +55,7 @@ jobs:
         run: |
           RESPONSE=$(curl -sf -X POST http://localhost:7860/predict \
             -H "Content-Type: application/json" \
-            -d '{"text": "I love this MLOps course!"}')
+            -d '{"text": "The weather today is absolutely wonderful!"}')
           echo "Model response: $RESPONSE"
           python3 -c "
           import sys, json
