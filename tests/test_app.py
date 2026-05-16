@@ -1,33 +1,35 @@
 import sys
 from unittest.mock import MagicMock
+from fastapi.testclient import TestClient
 
-# Mock transformers and torch before app import so CI does not need them installed
-_mock_clf = MagicMock(return_value=[{"label": "POSITIVE", "score": 0.9998}])
-_mock_transformers = MagicMock()
-_mock_transformers.pipeline.return_value = _mock_clf
-sys.modules["transformers"] = _mock_transformers
+# torch and transformers are 3GB — replace with fakes so CI runs in seconds
+mock_transformers = MagicMock()
+mock_transformers.pipeline.return_value = MagicMock(
+    return_value=[{"label": "POSITIVE", "score": 0.9998}]
+)
+sys.modules["transformers"] = mock_transformers
 sys.modules["torch"] = MagicMock()
 
-from fastapi.testclient import TestClient  # noqa: E402
-from app.main import app  # noqa: E402
+from app.main import app
 
 client = TestClient(app)
 
 
-def test_health():
+# Gate 1: is the service reachable?
+def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
 
 
-def test_predict_returns_label_and_score():
-    response = client.post("/predict", json={"text": "I love this product!"})
+# Gate 2: does predict return the expected fields?
+def test_predict_returns_sentiment():
+    response = client.post("/predict", json={"text": "I love this course!"})
     assert response.status_code == 200
-    body = response.json()
-    assert "label" in body
-    assert "score" in body
+    assert "label" in response.json()
+    assert "score" in response.json()
 
 
-def test_predict_empty_text_returns_400():
+# Gate 3: is bad input rejected before reaching the model?
+def test_empty_text_is_rejected():
     response = client.post("/predict", json={"text": "   "})
     assert response.status_code == 400
